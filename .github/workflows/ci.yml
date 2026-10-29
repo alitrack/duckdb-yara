@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.head_ref || '' }}-${{ github.base_ref || '' }}-${{ github.ref != 'refs/heads/main' || github.sha }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Build + test every platform. No upload-artifact anywhere, so this workflow
+# never touches the shared Actions artifact-storage pool (same pattern as the
+# entia workflows); rust-cache uses the separate 10GB/repo Actions-cache
+# allowance.
+#
+# Platform notes:
+# - osx_amd64 is CROSS-compiled on the arm64 macos-latest runner
+#   (rust.Makefile maps DUCKDB_PLATFORM=osx_amd64 to --target
+#   x86_64-apple-darwin). The scarce macos-13 Intel runners are avoided.
+# - The cargo e2e suite (make test) compiles a bundled in-memory DuckDB from
+#   source and LOADs the stamped artifact, so it only runs when the artifact
+#   is for the runner's own architecture: skipped on Windows (no bundled
+#   DuckDB cross-build) and on the osx_amd64 cross-build (an arm64 host
+#   cannot dlopen an x86_64 extension).
+jobs:
+  build:
+    name: Build & test (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: linux_amd64
+            test: true
+          - os: macos-latest
+            platform: osx_arm64
+            test: true
+          - os: macos-latest
+            platform: osx_amd64
+            test: false
+          - os: windows-latest
+            platform: windows_amd64
+            test: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # osx_amd64 cross-builds need the x86_64 std; on other platforms
+          # this is a no-op (host target is installed anyway).
+          targets: ${{ matrix.platform == 'osx_amd64' && 'x86_64-apple-darwin' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install build tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install make -y
+
+      - name: Configure (venv, platform, version)
+        shell: bash
+        run: make configure DUCKDB_PLATFORM=${{ matrix.platform }}
+
+      - name: Build + stamp metadata
+        shell: bash
+        run: make release DUCKDB_PLATFORM=${{ matrix.platform }}
+
+      - name: Test (cargo unit + SQL-level e2e)
+        if: matrix.test
+        shell: bash
+        run: make test
+
+      - name: Verify artifact
+        shell: bash
+        run: |
+          ls -la build/release/bson.duckdb_extension
+          file build/release/bson.duckdb_extension

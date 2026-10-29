@@ -1,0 +1,6 @@
+target/
+build/
+configure/
+*.duckdb_extension
+*.so
+*.dylib

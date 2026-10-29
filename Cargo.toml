@@ -1,0 +1,68 @@
+[package]
+name = "duckdb-yara"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "MIT"
+description = "DuckDB loadable extension: YARA rule validation + scanning (malware-signature detection) via pure-Rust yara-x, no native libyara"
+
+[lib]
+name = "yara"
+crate-type = ["cdylib"]
+
+# Packaging tool (copied from quack-rs, std-only): stamps the 534-byte DuckDB
+# extension metadata footer onto the built cdylib to produce the loadable
+# .duckdb_extension. `cargo run --bin append_metadata`.
+[[bin]]
+name = "append_metadata"
+path = "src-bin/append_metadata/main.rs"
+
+[dependencies]
+# quack-rs — pure-Rust wrapper over DuckDB's C Extension API (crates.io).
+# 0.18.0 is the version this code was written and tested against; pinned
+# exactly so the reviewed ABI-wrapper version can never float under a caret
+# requirement.
+quack-rs = "=0.18.0"
+# C extension API headers/symbols; the cdylib resolves them against the host
+# DuckDB process at LOAD time.
+libduckdb-sys = { version = "1.10504", features = ["loadable-extension"] }
+
+# Engine (scanning.rs, verbatim from the Query-farm vgi-yara worker, MIT):
+# pure-compute YARA compile/scan via yara-x. NO native libyara/C dependency —
+# pure Rust with a Cranelift JIT. Exact-pinned so a yara-x minor (which can
+# raise its MSRV — 1.22 declares 1.95) is an explicit bump. BSD-3.
+# default-features are off (they drag in the heavy vt/dotnet/macho/lnk/cuckoo/
+# dex/crx modules + proto codegen); enable just the standard malware-rule
+# modules so common rules (hash/pe/elf/math/string/time/console) compile.
+yara-x = { version = "=1.22.0", default-features = false, features = [
+    "constant-folding",
+    "fast-regexp",
+    "exact-atoms",
+    "hash-module",
+    "pe-module",
+    "elf-module",
+    "math-module",
+    "string-module",
+    "time-module",
+    "console-module",
+] }
+
+[dev-dependencies]
+# SQL-level integration tests: InMemoryDb compiles a real bundled DuckDB so the
+# built .duckdb_extension can be LOADed inside `cargo test`. Pinned EXACTLY:
+# the 1.1.0 line bundles a C++11-compatible DuckDB source tree that quack-rs
+# 0.18's bundled build (`-std=c++11`) compiles; the 1.20000.x line requires
+# C++17 and fails that build. `libduckdb-sys` must stay on the 1.1050x line to
+# match.
+quack-rs = { version = "=0.18.0", features = ["bundled-test"] }
+duckdb = { version = "=1.10506.0", features = ["bundled"] }
+
+[profile.release]
+# `unwind`, not `abort`: every callback is wrapped in quack-rs's
+# panic-safe `*_callback!` macros (catch_unwind -> set_error), so a panic in
+# extension code becomes a DuckDB error instead of aborting the host process.
+panic = "unwind"
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true
