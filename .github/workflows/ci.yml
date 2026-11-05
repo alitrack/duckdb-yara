@@ -84,5 +84,5 @@ jobs:
       - name: Verify artifact
         shell: bash
         run: |
-          ls -la build/release/bson.duckdb_extension
-          file build/release/bson.duckdb_extension
+          ls -la build/release/yara.duckdb_extension
+          file build/release/yara.duckdb_extension

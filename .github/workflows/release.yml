@@ -65,7 +65,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp build/release/bson.duckdb_extension dist/bson-${{ matrix.platform }}.duckdb_extension
+          cp build/release/yara.duckdb_extension dist/yara-${{ matrix.platform }}.duckdb_extension
           ls -la dist/
 
       - name: Upload to GitHub Release

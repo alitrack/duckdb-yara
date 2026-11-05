@@ -2,7 +2,7 @@
 
 PROJ_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-EXTENSION_NAME=bson
+EXTENSION_NAME=yara
 EXT_CONFIG=$(PROJ_DIR)extension_config.cmake
 
 # Set to 1 to enable Unstable API
